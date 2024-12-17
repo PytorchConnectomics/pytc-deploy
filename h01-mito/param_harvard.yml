@@ -1,0 +1,27 @@
+SEG: 
+  ROOT_PATH: '/n/boslfs02/LABS/lichtman_lab/donglai/H01/seg_mip5/' 
+  SEG_PATH: 'seg/%04d.h5'
+  SEG_BBOX_PATH: 'bbox/%04d_bb.h5'
+  SEG_ZRAN_PATH: 'bbox/'
+  NEURON_TILE_PATH: 'neuron/tile_%d.txt'
+  NEURON_BBOX_PATH: 'neuron/bb_%d.txt'
+
+
+
+CLUSTER:
+  PARTITION: 'gpu_test'
+  NUM_GPU: 1
+  MEMORY: '50GB'
+  TIME: '1-00:00'
+  CUDA: 'module load cuda/12.0.1-fasrc01 cudnn/8.8.0.121_cuda12-fasrc01'
+  CONDA: '/n/home04/donglai/miniconda3/envs/'
+  PYTC: '/n/home04/donglai/lib/seg/pytorch_connectomics'
+  REPO_PATH: '/n/home04/donglai/lib/seg/pytc-deploy/h01-mito/'
+  SLURM_PATH: 'slurm/'
+  
+
+MITO:
+  ROOT_PATH: '/n/boslfs02/LABS/lichtman_lab/donglai/H01/mito_mip1/' 
+  TENSORSTORE_PATH: 'ts/ts_im.pkl' 
+  UNET_PATH: 'tile/'
+  MODEL_PATH: '/n/boslfs02/LABS/lichtman_lab/donglai/modelzoo/mitoEM/'
