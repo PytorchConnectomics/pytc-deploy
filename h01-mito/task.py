@@ -56,9 +56,8 @@ def neuron_to_tile(neuron, zid, zran, f_box, f_seg):
             else:
                 out_bb = merge_bbox(out_bb, bb) 
             
-            bb[::2] = (bb[::2]//tsz)*tsz
-            bb[1::2] = ((bb[1::2]+tsz-1)//tsz)*tsz
-            st,lt = bb[::2]//tsz, bb[1::2]//tsz
+            st = bb[::2]//neuron_tile_size
+            lt = (bb[1::2]+neuron_tile_size-1)//neuron_tile_size
             seg = read_h5(f_seg % z)                                
             for rr in range(st[1], lt[1]+1):
                 for cc in range(st[2], lt[2]+1):
@@ -69,8 +68,8 @@ def neuron_to_tile(neuron, zid, zran, f_box, f_seg):
     out_tile = np.unique(np.vstack(out_tile), axis=0)
     out_tile_bbox = np.zeros([len(out_tile), 6], int)
     for j in range(len(out_tile)):
-        xs = [(oset[i]+out_tile[j][i]*tsz[i])*ratio[i] for i in range(3)]
-        xl = [min(sz[i], (oset[i]+(out_tile[j][i]+1)*tsz[i]))*ratio[i] for i in range(3)]
+        xs = [(neuron_volume_offset[i]+out_tile[j][i]*tsz[i])*ratio[i] for i in range(3)]
+        xl = [min(sz[i], (neuron_volume_offset[i]+(out_tile[j][i]+1)*tsz[i]))*ratio[i] for i in range(3)]
         #zyx -> xyz
         out_tile_bbox[j, ::2] = xs[::-1]
         out_tile_bbox[j, 1::2] = xl[::-1]        
@@ -197,3 +196,62 @@ def bc_watershed(volume, thres1=0.9, thres2=0.8, thres3=0.85, thres_small=128, s
 
     segm, _ = fastremap.renumber(segm, in_place=True)
     return segm
+
+    
+def mito_watershed_iou(f_mito_ws_func, arr_mito):
+    fn = f_mito_ws_func(arr_mito)
+    if os.path.exists(fn):
+        seg = None
+        for i, dd in enumerate('xyz'):
+            fout = f'{fn[:-3]}_{dd}.h5'
+            if not os.path.exists(fout):
+                arr_nb = arr_mito.copy()
+                arr_nb[i*2:(i+1)*2] -= mito_tile_size[2-i]
+                fn_nb = f_mito_ws_func(arr_nb)
+                if os.path.exists(fn_nb):
+                    if seg is None:
+                        seg = read_h5(fn)
+                    seg_nb = read_h5(fn_nb)                
+                    if dd == 'x':
+                        iou = seg_to_iou(seg[:,:,0], seg_nb[:,:,-1])
+                    elif dd == 'y':
+                        iou = seg_to_iou(seg[:,0], seg_nb[:,-1])
+                    elif dd == 'z':
+                        iou = seg_to_iou(seg[0], seg_nb[-1])
+                    iou = iou[iou[:,1]!=0]
+                    write_h5(fout, iou)              
+    
+    
+def mito_neuron_sid(f_mito_ws, arr_mito, ratio=0.6):
+    mito = read_h5(f_mito_ws)
+    arr_neuron = arr_mito.copy()
+    arr_neuron[::2] = arr_neuron[::2] // mito_volume_ratio[::-1] - neuron_volume_offset[::-1]
+    arr_neuron[1::2] = arr_neuron[1::2] // mito_volume_ratio[::-1] - neuron_volume_offset[::-1]
+    seg = read_slice_volume(seg_fns, arr_neuron[4], arr_neuron[5], arr_neuron[2], \
+                            arr_neuron[3], arr_neuron[0], arr_neuron[1], np.uint64, \
+                            mito_volume_ratio[1:], 0, neuron_volume_size)
+    assert (seg==neuron).any()
+    
+    out = []
+    for z in range(mito_volume_ratio[0]):                            
+        ui, uc = np.unique(mito[z::mito_volume_ratio[0]] * (seg == neuron), return_counts=True)
+        uc = uc[ui>0]
+        ui = ui[ui>0]
+        if len(ui) >0:
+            if len(out) == 0:
+                out = dict(zip(ui, uc))
+            else:
+                for x,y in zip(ui,uc):
+                    if x in out:
+                        out[x] += y
+                    else:
+                        out[x] = y                        
+    if len(out) == 0:
+        sid = []
+    else:
+        # remove ones with small overlap                            
+        ui, uc = np.unique(mito, return_counts=True) 
+        ind = np.where(np.in1d(ui, [x for x in out.keys()]))[0]
+        sid = [ui[x] for x in ind if out[ui[x]]/uc[x]>overlap_ratio]
+        # score = [out[ui[x]]/uc[x] for x in ind]
+    return sid

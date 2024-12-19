@@ -24,4 +24,6 @@ MITO:
   ROOT_PATH: '/n/boslfs02/LABS/lichtman_lab/donglai/H01/mito_mip1/' 
   TENSORSTORE_PATH: 'ts/ts_im.pkl' 
   UNET_PATH: 'tile/'
+  NEURON_MITO_PATH: 'neuron/%d/'
   MODEL_PATH: '/n/boslfs02/LABS/lichtman_lab/donglai/modelzoo/mitoEM/'
+  
