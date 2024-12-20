@@ -17,7 +17,7 @@ CLUSTER:
   CONDA: '/n/home04/donglai/miniconda3/envs/'
   PYTC: '/n/home04/donglai/lib/seg/pytorch_connectomics'
   REPO_PATH: '/n/home04/donglai/lib/seg/pytc-deploy/h01-mito/'
-  SLURM_PATH: 'slurm/'
+  SLURM_PATH: '/n/boslfs02/LABS/lichtman_lab/donglai/H01/slurm/'
   
 
 MITO:

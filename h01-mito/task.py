@@ -5,6 +5,7 @@ from const import *
 import cc3d, fastremap
 from skimage.segmentation import watershed
 from skimage.morphology import remove_small_objects
+from scipy.ndimage import binary_fill_holes
 
 def generate_jobs_dl(conf, neuron, job_num=1, mem='50GB', run_time='1-00:00', job_order=1):
     PARTITION, CUDA, PYTC, PYTHON, MODEL_ROOT = conf['CLUSTER']['PARTITION'], conf['CLUSTER']['CUDA'], conf['CLUSTER']['PYTC'], conf['CLUSTER']['PYTHON'], conf['CLUSTER']['MODEL_ROOT']
@@ -230,11 +231,12 @@ def mito_neuron_sid(f_mito_ws, arr_mito, ratio=0.6):
     seg = read_slice_volume(seg_fns, arr_neuron[4], arr_neuron[5], arr_neuron[2], \
                             arr_neuron[3], arr_neuron[0], arr_neuron[1], np.uint64, \
                             mito_volume_ratio[1:], 0, neuron_volume_size)
-    assert (seg==neuron).any()
+    seg = binary_fill_holes(seg==neuron)
+    assert seg.any()
     
     out = []
     for z in range(mito_volume_ratio[0]):                            
-        ui, uc = np.unique(mito[z::mito_volume_ratio[0]] * (seg == neuron), return_counts=True)
+        ui, uc = np.unique(mito[z::mito_volume_ratio[0]] * seg, return_counts=True)
         uc = uc[ui>0]
         ui = ui[ui>0]
         if len(ui) >0:

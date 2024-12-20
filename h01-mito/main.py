@@ -3,6 +3,7 @@ import os,sys
 import numpy as np
 from em_util.io import *
 from em_util.seg import *
+from em_util.cluster import *
 
 from task import *
 sys.path.append('../')
@@ -33,17 +34,18 @@ if __name__ == "__main__":
     f_mito_neuron_count = os.path.join(f_mito_neuron, 'count.h5')
     f_mito_neuron_match = os.path.join(f_mito_neuron, 'match.h5')
     f_mito_neuron_output = os.path.join(f_mito_neuron, 'mito.h5')
+    f_mito_neuron_output_ds = lambda arr: f'{f_mito_neuron_output[:-3]}_{arr[0]}_{arr[1]}_{arr[2]}.h5'
     
 
     if args.task == 'slurm': 
         # run in parallel
-        # python main.py -t slurm -e imu -s "-t bbox -jn 10"
-        # python main.py -t slurm -e lichtman -s "-t mito-watershed -n 36750893213 -jn 10"
+        # python main.py -t slurm -e imu -s="-t bbox -jn 10"
+        # python main.py -t slurm -cp lichtman -s="-t mito-neuron-watershed -n 590612150" -jn 10
         cmd = f'\ncd {conf["CLUSTER"]["REPO_PATH"]}'
-        cmd += f'\n{conf["CLUSTER"]["CONDA"]}{args.env}/bin/python main.py "{args.cmd}" -ji %d -jn %d'  
+        cmd += f'\n{conf["CLUSTER"]["CONDA"]}{args.env}/bin/python main.py {args.cmd} -ji %d -jn %d'  
         
-        cmd_task = cmd.split(' ')
-        output_file = os.path.join(conf['CLUSTER']['ROOT_PATH'], conf['CLUSTER']['SLURM_PATH'], cmd_task[1], 'slurm')
+        cmd_task = args.cmd.split(' ')
+        output_file = os.path.join(conf['CLUSTER']['SLURM_PATH'], cmd_task[1], 'job')
         mkdir(output_file, 'parent')
         write_slurm_all(cmd, output_file, args.job_num, args.partition, 1, args.num_gpu, args.memory, args.run_time)
     else:
@@ -89,9 +91,9 @@ if __name__ == "__main__":
                     # python main.py -t mito-neuron-check -n 590612150
                     num = 0
                     for arr in tile:
-                        #fn = f_mito_ws(arr)
+                        fn = f_mito_ws(arr)
                         #fn = f_mito_pred(arr)
-                        fn = f'{f_mito_neuron%neuron}/{f_tile2(arr)}.h5'
+                        #fn = f_mito_neuron_tile(arr)
                         if not os.path.exists(fn):
                             print(f'{neuron} missing: {fn}')
                             num += 1
@@ -174,22 +176,25 @@ if __name__ == "__main__":
                                                 # import pdb;pdb.set_trace()
                                                 mid = np.vstack([mid, tmp])
                                                 print(i,len(mid))
-                    write_h5(f_mito_neuron_match%neuron, mid)
+                    relabel = UnionFind(np.arange(1,1+count[-1]))
+                    relabel.union_arr(mid)
+                    relabel_arr = np.arange(count[-1]+1).astype(np.uint16)
+                    to_merge = [list(x) for x in relabel.components() if len(x)>1]
+                    for component in to_merge:
+                        cid = min(component)
+                        relabel_arr[component] = cid
+                    write_h5(f_mito_neuron_match%neuron, [relabel_arr,mid], ['relabel','mid'])
+                elif args.task == 'mito-neuron-test': # output
+                    relabel_arr = read_h5(f_mito_neuron_match%neuron, ['relabel'])
+                    print_arr(np.unique(relabel_arr))
+
                 elif args.task == 'mito-neuron-export': # output
                     # python main.py -t mito-neuron-export -n 36750893213
                     output_file = f_mito_neuron_output % neuron
                     if not os.path.exists(output_file):                        
                         # relabel seg
                         count = read_h5(f_mito_neuron_count%neuron)
-                        relabel = UnionFind(np.arange(1,1+count[-1]))
-                        mid = read_h5(f_mito_neuron_match%neuron)
-                        relabel.union_arr(mid)
-                        relabel_arr = np.arange(count[-1]+1).astype(np.uint16)
-                        to_merge = [list(x) for x in relabel.components() if len(x)>1]
-                        for component in to_merge:
-                            cid = min(component)
-                            relabel_arr[component] = cid
-                    
+                        relabel_arr = read_h5(f_mito_neuron_match%neuron, ['relabel'])
                         bb = np.loadtxt(f_neuron_box%neuron).astype(int)
                         output_ratio = [1,4,4]
 
@@ -234,3 +239,67 @@ if __name__ == "__main__":
                         out = read_tile_h5_by_bbox(h5Name, bb[0], bb[1]+1, bb[2], bb[3]+1, bb[4], bb[5]+1, \
                                         zyx_sz, tile_type='seg', tile_step=output_ratio[1:], zstep=output_ratio[0], \
                                             output_file=output_file, h5_func=h5_func)
+                elif args.task == 'mito-neuron-export-ds': # downsample
+                    # python main.py -t mito-neuron-export-ds -n 36750893213 -r 4,4,4 -cn 10
+                    # [mito[x*72:(x+1)*72].max() for x in range(10)]
+                    ratio = [int(x) for x in args.ratio.split(',')]
+                    ds_file = f_mito_neuron_output_ds(ratio) % neuron
+                    if not os.path.exists(ds_file):
+                        input_file = f_mito_neuron_output % neuron
+                        vol_downsample_chunk(input_file, ratio, output_file=ds_file, chunk_num=args.chunk_num)
+                elif args.task in ['mito-neuron-ng','mito-neuron-mesh']: # downsample
+                    # python main.py -t mito-neuron-ng -n 36750893213
+                    from em_util.ng import NgDataset
+                    Dw = 'file:///n/holylfs05/LABS/pfister_lab/Everyone/public/ng/'
+                    wn = 'h01_mito'
+                    input_file = f_mito_neuron_output % neuron
+                    fid = h5py.File(input_file,'r')
+                    vol = fid['main']
+
+                    volume_size = vol.shape[::-1]
+                    resolution = [32, 32, 33]
+                    mip_ratio = [[1,1,1],[2,2,2],[4,4,4]]
+                    output_seg = f'{Dw}{wn}/{neuron}/'
+                    mkdir(output_seg[7:], 'all')
+                    # 128x128x133
+                    oo = 4 * (np.loadtxt(f_neuron_box%neuron).astype(int)[::2] + neuron_volume_offset)
+                    dst = NgDataset(volume_size, resolution, mip_ratio, offset=oo[::-1])
+
+                    dst.create_info(output_seg, 'seg')
+                    if args.task == 'mito-neuron-ng':
+                        def get_seg(z0, z1, y0, y1, x0, x1, mip):
+                            return np.array(vol[z0: z1:mip[2], y0: y1:mip[1], x0: x1: mip[0]])
+                        dst.create_tile(get_seg, output_seg, 'seg', range(len(mip_ratio)))
+                    elif args.task == 'mito-neuron-mesh':
+                        dst.create_mesh(output_seg, 1, (np.array(volume_size)+1)//2, do_subdir = True)
+                        #dst.create_mesh(output_seg, 0, volume_size, do_subdir = True)
+                    fid.close()
+                elif args.task == 'mito-neuron-debug': # downsample
+                    # python main.py -t mito-neuron-debug -n 36750893213
+                    # downsample: all 0 for big z
+                    """
+                    count = read_h5(f_mito_neuron_count%neuron)
+                    relabel = UnionFind(np.arange(1,1+count[-1]))
+                    mid = read_h5(f_mito_neuron_match%neuron)
+                    relabel.union_arr(mid)
+                    relabel_arr = np.arange(count[-1]+1).astype(np.uint16)
+                    to_merge = [list(x) for x in relabel.components() if len(x)>1]
+                    for component in to_merge:
+                        cid = min(component)
+                        relabel_arr[component] = cid
+                    print(len(np.unique(relabel_arr)))
+                    # 1081 seg
+                    import pdb; pdb.set_trace()
+                    """
+                    count = read_h5(f_mito_neuron_count%neuron)
+                    arr = [4800,53248,328704]
+                    sid = read_h5(f'/n/boslfs02/LABS/lichtman_lab/donglai/H01/mito_mip1/neuron/36750893213/{arr[0]}_{arr[1]}_{arr[2]}.h5')
+                    fid = h5py.File(f'/n/boslfs02/LABS/lichtman_lab/donglai/H01/mito_mip1/neuron/36750893213/mito.h5','r')['main']
+                    bb = [  509,  1227,   800,  2573, 15667, 17208]
+                    oset = np.array([0,2560,3520])
+                    bb2 = (oset+bb[::2])*mito_volume_ratio
+                    import pdb; pdb.set_trace()
+                    aa = np.array(fid[arr[0]-bb[0]*4:arr[0]+100-bb[0]*4])
+                    import pdb; pdb.set_trace()
+                    #mito = read_h5('/n/boslfs02/LABS/lichtman_lab/donglai/H01/mito_mip1/tile//4800/53248-328704_ws.h5')
+                    print(len(np.unique(mito)))
