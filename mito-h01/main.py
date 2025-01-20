@@ -2,7 +2,6 @@ import argparse
 import os,sys
 import numpy as np
 from em_util.io import *
-from em_util.seg import *
 from em_util.cluster import *
 
 from task import *
@@ -39,8 +38,10 @@ if __name__ == "__main__":
 
     if args.task == 'slurm': 
         # run in parallel
-        # python main.py -t slurm -e imu -s="-t bbox -jn 10"
-        # python main.py -t slurm -cp lichtman -s="-t mito-neuron-watershed -n 590612150" -jn 10
+        # python main.py -t slurm -s="-t bbox -jn 10"
+        # python main.py -t slurm -s="-t mito-neuron-watershed-iou -n 590612150" -jn 20
+        # python main.py -t slurm -s="-t mito-neuron-watershed -n 590612150" -jn 10
+        # python main.py -t slurm -s="-t mito-neuron-sid -n 590612150" -jn 10
         cmd = f'\ncd {conf["CLUSTER"]["REPO_PATH"]}'
         cmd += f'\n{conf["CLUSTER"]["CONDA"]}{args.env}/bin/python main.py {args.cmd} -ji %d -jn %d'  
         
@@ -113,14 +114,14 @@ if __name__ == "__main__":
                             print(fn)
                             out = bc_watershed(read_h5(fn), thres1=0.85, thres2=0.6, thres3=0.8, thres_small=0, seed_thres=0)
                             write_h5(fout, out)
-                elif args.task == 'mito-watershed-iou': # decode prediction into instance
-                    # python main.py -t mito-watershed-iou -n 36750893213
+                elif args.task == 'mito-neuron-watershed-iou': # decode prediction into instance
+                    # python main.py -t mito-neuron-watershed-iou -n 36750893213
                     # compare to the previous one
                     for arr in tile[args.job_id::args.job_num]:                    
-                        mito_watershed_iou(f_mito_ws_func, arr_mito)
+                        mito_watershed_iou(f_mito_ws, arr)
                                         
                 elif args.task == 'mito-neuron-sid': # compute the seg ids within the mask
-                    # python main.py -t mito-watershed-iou -n 36750893213
+                    # python main.py -t mito-neuron-sid -n 36750893213
                     if nid == 0:
                         seg_fns = [f_seg%z for z in range(neuron_volume_size[0])]                                    
                     D0 = f_mito_neuron%neuron

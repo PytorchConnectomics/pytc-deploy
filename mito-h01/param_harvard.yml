@@ -16,7 +16,7 @@ CLUSTER:
   CUDA: 'module load cuda/12.0.1-fasrc01 cudnn/8.8.0.121_cuda12-fasrc01'
   CONDA: '/n/home04/donglai/miniconda3/envs/'
   PYTC: '/n/home04/donglai/lib/seg/pytorch_connectomics'
-  REPO_PATH: '/n/home04/donglai/lib/seg/pytc-deploy/h01-mito/'
+  REPO_PATH: '/n/home04/donglai/lib/seg/pytc-deploy/mito-h01/'
   SLURM_PATH: '/n/boslfs02/LABS/lichtman_lab/donglai/H01/slurm/'
   
 

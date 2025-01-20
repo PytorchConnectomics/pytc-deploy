@@ -40,11 +40,17 @@ def get_parser():
         "-ji",
         "--job-id",
         type=int,        
-        default=1,
+        default=0,
     )    
     parser.add_argument(
         "-jn",
         "--job-num",
+        type=int,        
+        default=1,
+    )
+    parser.add_argument(
+        "-cn",
+        "--chunk-num",
         type=int,        
         default=1,
     )
@@ -56,11 +62,18 @@ def get_parser():
         default="",
     )
     parser.add_argument(
+        "-r",
+        "--ratio",
+        type=str,
+        help="downsample ratio",
+        default="1,1,1",
+    )
+    parser.add_argument(
         "-cp",
         "--partition",
         type=str,
         help="",
-        default="shared",
+        default="lichtman",
     )
     parser.add_argument(
         "-cm",

@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from em_util.io import *
+from em_util.seg import *
 from const import *
 import cc3d, fastremap
 from skimage.segmentation import watershed
