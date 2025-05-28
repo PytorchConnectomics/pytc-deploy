@@ -1,0 +1,24 @@
+CLUSTER:
+  PARTITION: 'gpu_requeue'
+  NUM_CPU: 1
+  NUM_GPU: 1
+  MEMORY: '50GB'
+  RUNTIME: '1-00:00'
+  CUDA: 'module load cuda/12.0.1-fasrc01 cudnn/8.8.0.121_cuda12-fasrc01'
+  CONDA: '/n/home04/donglai/miniconda3/envs/'
+  PYTC: '/n/home04/donglai/lib/seg/pytorch_connectomics'
+  REPO_PATH: '/n/home04/donglai/lib/seg/pytc-deploy/syn/'
+  SLURM_PATH: '/n/holylfs05/LABS/pfister_lab/Lab/coxfs01/pfister_lab2/Lab/donglai/eng/xm/clem_synapse//slurm/'
+  
+PRED:
+  IMAGE_FOLDER: '/n/holylfs05/LABS/pfister_lab/Lab/coxfs01/pfister_lab2/Lab/donglai/eng/xm/clem_synapse/' 
+  IMAGE_TENSORSTORE: 'ts_clem_im.pkl' 
+  IMAGE_RANGE: [[51128, 62280], [38720, 50016], [0, 1102]]
+  IMAGE_TILE_NUM: [4, 4, 10]
+  IMAGE_COORD: 'ts_clem_im_coord.txt' 
+  MODEL_ENV: 'pytc'
+  MODEL_REPO: '/n/home04/donglai/lib/seg/pytorch_connectomics/'
+  MODEL_FOLDER: '/n/holylfs05/LABS/pfister_lab/Lab/coxfs01/pfister_lab2/Lab/donglai/eng/xm/clem_synapse/'
+  MODEL_CONFIG: ['JWR15-Synapse-Base.yaml', 'JWR15-Synapse-BCE.yaml']
+  MODEL_CHECKPOINT: 'checkpoint_300000.pth.tar'
+  MODEL_OUTPUT: '/n/boslfs02/LABS/lichtman_lab/donglai/xiaomeng/202407/syn/test/'

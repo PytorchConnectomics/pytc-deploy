@@ -3,17 +3,14 @@ import os,sys
 import numpy as np
 from em_util.io import *
 from em_util.cluster import *
-
 from task import *
-sys.path.append('../')
-from util import *
 
 if __name__ == "__main__":
     parser = get_parser()    
     args = parser.parse_args()
     if args.neuron != '':
         args.neuron = [int(x) for x in args.neuron.split(',')] 
-    conf = read_yml(f'param_{args.cluster}.yml')
+    conf = read_yml(f'param.yml')
     
 
     f_seg = os.path.join(conf['SEG']['ROOT_PATH'], conf['SEG']['SEG_PATH'])
