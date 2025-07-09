@@ -2,48 +2,38 @@ import os
 import numpy as np
 from em_util.io import *
 from em_util.seg import *
+from em_util.cluster import *
 from const import *
 import cc3d, fastremap
 from skimage.segmentation import watershed
 from skimage.morphology import remove_small_objects
 from scipy.ndimage import binary_fill_holes
 
-def generate_jobs_dl(conf, neuron, job_num=1, mem='50GB', run_time='1-00:00', job_order=1):
-    PARTITION, CUDA, PYTC, PYTHON, MODEL_ROOT = conf['CLUSTER']['PARTITION'], conf['CLUSTER']['CUDA'], conf['CLUSTER']['PYTC'], conf['CLUSTER']['PYTHON'], conf['CLUSTER']['MODEL_ROOT']
-    image_name = os.path.join(conf['INPUT']['ROOT_PATH'], conf['INPUT']['NEURON_PATH']%neuron)
-    unet_path = os.path.join(conf['OUTPUT']['ROOT_PATH'], conf['OUTPUT']['UNET_PATH'])
-    ts_path = os.path.join(conf['OUTPUT']['ROOT_PATH'], conf['OUTPUT']['UNET_PATH'])
-    slurm_path = os.path.join(conf['OUTPUT']['ROOT_PATH'], conf['OUTPUT']['CMD_PATH'])
-    
-    for i in range(job_num):
-        tmp = f"""#!/bin/bash -e
-#SBATCH --job-name=h01_mito # job name
-#SBATCH -N 1 # how many nodes to use for this job
-#SBATCH -n 1 # how many CPU-cores (per node) to use for this job
-#SBATCH --gres=gpu:1
-#SBATCH --mem={mem} # how much RAM (per node) to allocate
-#SBATCH -t {run_time} # job execution time limit formatted hrs:min:sec
-#SBATCH --partition={PARTITION} # see sinfo for available partitions
-#SBATCH -e out.%N.%j.err # STDERR
-#SBATCH -o out.%N.%j.out
-
-{CUDA}
-cd {PYTC}
-{PYTHON} -u scripts/main.py --inference \
---config-base {MODEL_ROOT}/MitoEM-R-Base.yaml \
---config-file {MODEL_ROOT}/MitoEM-R-BC.yaml \
---checkpoint {MODEL_ROOT}/mito_u3d-bc_mitoem_300k.pth.tar \
+def generate_jobs_dl(conf, neuron, job_num=1):
+    conf_m, conf_p, conf_c = conf['MASK'], conf['PRED'], conf['CLUSTER']
+    image_name = os.path.join(conf_m['ROOT_PATH'], conf_m['NEURON_TILE_PATH']%neuron)
+    output_path = os.path.join(conf_p['ROOT_PATH'], conf_p['MODEL_OUTPUT'])
+    ts_path = os.path.join(conf_p['ROOT_PATH'], conf_p['TENSORSTORE_PATH'])    
+        
+    cmd = f"""{conf_c['CUDA']}
+cd {conf_c['PYTC']}
+{conf_c['CONDA']}{conf_p['MODEL_ENV']}/bin/python -u scripts/main.py --inference \
+--config-base {conf_p['MODEL_FOLDER']}/{conf_p['MODEL_CONFIG'][0]} \
+--config-file {conf_p['MODEL_FOLDER']}/{conf_p['MODEL_CONFIG'][1]} \
+--checkpoint {conf_p['MODEL_FOLDER']}/{conf_p['MODEL_CHECKPOINT']} \
 INFERENCE.DO_SINGLY True INFERENCE.DO_CHUNK_TITLE 0 \
-INFERENCE.DO_SINGLY_START_INDEX {i} INFERENCE.DO_SINGLY_STEP {job_num*job_order} \
+INFERENCE.DO_SINGLY_START_INDEX %d INFERENCE.DO_SINGLY_STEP %d \
 INFERENCE.IMAGE_NAME {image_name} \
-INFERENCE.OUTPUT_PATH {unet_path} \
+INFERENCE.OUTPUT_PATH {output_path} \
 INFERENCE.TENSORSTORE_PATH {ts_path} \
 """
-        tmp += """INFERENCE.OUTPUT_NAME "f'{arr[4]:04d}/{arr[2]}-{arr[0]}'" """ 
-        write_txt(f'{slurm_path}/{neuron}_{i}_{job_num}.sh', tmp)
-    print(f'cd {slurm_path}')
-    print('for i in {0..%d};do sbatch %d_${i}_%d.sh && sleep 1;done' % (job_num - 1, neuron, job_num))
-
+    cmd += """INFERENCE.OUTPUT_NAME "f'{arr[4]:04d}/{arr[2]}-{arr[0]}'" """ 
+    output_file = f'{conf_c["SLURM_PATH"]}/mito-pred/{neuron}'
+    mkdir(output_file, 'parent')
+    write_slurm_all(cmd, output_file, job_num, conf_c['PARTITION'], \
+                        conf_c['NUM_CPU'], conf_c['NUM_GPU'], conf_c['MEMORY'], \
+                        conf_c['RUNTIME'])
+        
 
 def neuron_to_tile(neuron, zid, zran, f_box, f_seg):
     zz = zran[zid[:,0]==neuron][0]
@@ -63,15 +53,16 @@ def neuron_to_tile(neuron, zid, zran, f_box, f_seg):
             seg = read_h5(f_seg % z)                                
             for rr in range(st[1], lt[1]+1):
                 for cc in range(st[2], lt[2]+1):
-                    if (seg[rr*tsz[1]:(rr+1)*tsz[1], cc*tsz[2]:(cc+1)*tsz[2]]==neuron).any():
+                    if (seg[rr*neuron_tile_size[1]:(rr+1)*neuron_tile_size[1], 
+                            cc*neuron_tile_size[2]:(cc+1)*neuron_tile_size[2]]==neuron).any():
                         out_tile.append([st[0],rr,cc])
     # much of the box can be empty
     # tile = itertools.product(range(st[0],lt[0]),range(st[1],lt[1]),range(st[2],lt[2]))            
     out_tile = np.unique(np.vstack(out_tile), axis=0)
     out_tile_bbox = np.zeros([len(out_tile), 6], int)
     for j in range(len(out_tile)):
-        xs = [(neuron_volume_offset[i]+out_tile[j][i]*tsz[i])*ratio[i] for i in range(3)]
-        xl = [min(sz[i], (neuron_volume_offset[i]+(out_tile[j][i]+1)*tsz[i]))*ratio[i] for i in range(3)]
+        xs = [(neuron_volume_offset[i]+out_tile[j][i]*neuron_tile_size[i])*mito_volume_ratio[i] for i in range(3)]
+        xl = [min(neuron_volume_size[i], (neuron_volume_offset[i]+(out_tile[j][i]+1)*neuron_tile_size[i]))*mito_volume_ratio[i] for i in range(3)]
         #zyx -> xyz
         out_tile_bbox[j, ::2] = xs[::-1]
         out_tile_bbox[j, 1::2] = xl[::-1]        
@@ -104,7 +95,7 @@ def seg_zran_merge(f_zran_p, job_num):
     return out_id, out_zran
 
 def seg_zran_p(f_box, job_id, job_num):
-    ind = np.linspace(0, sz[0], job_num+1).astype(int)
+    ind = np.linspace(0, neuron_volume_size[0], job_num+1).astype(int)
     bbox = read_h5(f_box % ind[job_id])
     out = np.hstack([bbox[:,:1], ind[job_id]*np.ones([len(bbox),2])]).astype(np.uint64)
     for z in range(ind[job_id]+1,ind[job_id+1]):
@@ -120,7 +111,7 @@ def seg_zran_p(f_box, job_id, job_num):
     return out
 
 def seg_bbox_p(f_seg, f_box, job_id, job_num):                    
-    for z in range(sz[0])[job_id::job_num]:
+    for z in range(neuron_volume_size[0])[job_id::job_num]:
         if not os.path.exists(f_box % z):
             print(z)
             seg = read_h5(f_seg % z)
@@ -224,7 +215,7 @@ def mito_watershed_iou(f_mito_ws_func, arr_mito):
                     write_h5(fout, iou)              
     
     
-def mito_neuron_sid(f_mito_ws, arr_mito, ratio=0.6):
+def mito_neuron_sid(f_mito_ws, arr_mito, seg_fns, neuron, overlap_ratio=0.6):
     mito = read_h5(f_mito_ws)
     arr_neuron = arr_mito.copy()
     arr_neuron[::2] = arr_neuron[::2] // mito_volume_ratio[::-1] - neuron_volume_offset[::-1]
@@ -232,12 +223,13 @@ def mito_neuron_sid(f_mito_ws, arr_mito, ratio=0.6):
     seg = read_slice_volume(seg_fns, arr_neuron[4], arr_neuron[5], arr_neuron[2], \
                             arr_neuron[3], arr_neuron[0], arr_neuron[1], np.uint64, \
                             mito_volume_ratio[1:], 0, neuron_volume_size)
+    # initial neuron seg mask may have holes
     seg = binary_fill_holes(seg==neuron)
     assert seg.any()
     
     out = []
-    for z in range(mito_volume_ratio[0]):                            
-        ui, uc = np.unique(mito[z::mito_volume_ratio[0]] * seg, return_counts=True)
+    for z in range(mito_volume_ratio[0]):
+        ui, uc = np.unique(mito[z::mito_volume_ratio[0]][:seg.shape[0]] * seg, return_counts=True)
         uc = uc[ui>0]
         ui = ui[ui>0]
         if len(ui) >0:
@@ -252,7 +244,7 @@ def mito_neuron_sid(f_mito_ws, arr_mito, ratio=0.6):
     if len(out) == 0:
         sid = []
     else:
-        # remove ones with small overlap                            
+        # remove mitos with small overlap with the neuron mask
         ui, uc = np.unique(mito, return_counts=True) 
         ind = np.where(np.in1d(ui, [x for x in out.keys()]))[0]
         sid = [ui[x] for x in ind if out[ui[x]]/uc[x]>overlap_ratio]
